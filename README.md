@@ -1,1 +1,1 @@
-# trigobomb
+# trigobombלהשלים את המאפיינים 
