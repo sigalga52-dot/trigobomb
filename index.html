@@ -1,0 +1,313 @@
+<!-- נושא: טריגו בסיס - זיהוי וחישוב פונקציות | רמה: י' 4 יח"ל | מאפיינים: עם מגבלת זמן | תיאור אפליקציה: פצצת הטריגו -->
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>פצצת הטריגו – נטרול הפצצה</title>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        window.MathJax = { tex: { inlineMath:[['$','$']], displayMath:[['$$','$$']] }, startup: { typeset: false } };
+    </script>
+    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Heebo:wght@400;700;900&family=JetBrains+Mono:wght@400;700&display=swap');
+        :root { --neon: #00ff41; --danger: #ff2040; --warn: #ffbb00; --bg: #020a02; --panel: #071207; --panel2: #0d1f0d; }
+        * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color: transparent; }
+        html, body { width: 100%; height: 100%; background: #000 !important; color: #d0ffd0; overflow: hidden; }
+        body { font-family:'Heebo',sans-serif; background: var(--bg) !important; position: fixed; }
+        #root { position: fixed; top: 0; left: 0; width: 100%; height: 100%; padding-top: 85px !important; overflow-y: auto; overflow-x: hidden; }
+        .mono { font-family:'JetBrains Mono',monospace; }
+        .ans-btn { background:var(--panel2); border:2px solid rgba(255,255,255,0.1); border-radius:12px; padding:1.1rem .8rem; min-height:65px; color:#b0ffb0; transition:all .15s; direction:ltr; display:flex; align-items:center; justify-content:center; width: 100%; font-size: 1.1rem; }
+        .btn-neon { background:var(--neon); color:#020a02; border:none; border-radius:12px; padding:1.1rem; font-size:1.2rem; font-weight:900; box-shadow:0 0 20px rgba(0,255,65,.3); width:100%; cursor: pointer; }
+        .report-card { background: #0a1a0a; border: 3px solid var(--neon); border-radius: 20px; padding: 1.5rem; text-align: right; }
+        /* ── TOAST ── */
+        #toast {
+            position:fixed; bottom:40px; left:50%;
+            transform:translateX(-50%) translateY(100px);
+            background:linear-gradient(135deg,#0d2e0d,#061406);
+            border:2px solid var(--neon); border-radius:14px;
+            padding:12px 24px; z-index:9999; text-align:center;
+            font-family:'Heebo',sans-serif; font-size:0.95rem; font-weight:700;
+            color:var(--neon); box-shadow:0 0 24px rgba(0,255,65,0.45);
+            opacity:0; pointer-events:none; white-space:nowrap;
+            transition:transform .35s cubic-bezier(.175,.885,.32,1.275), opacity .35s;
+        }
+        #toast.show {
+            transform:translateX(-50%) translateY(0);
+            opacity:1;
+        }
+    </style>
+</head>
+<body><div id="root"></div>
+<div id="toast"></div>
+<script>
+function showToast(msg, duration) {
+    duration = duration || 3500;
+    var t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    clearTimeout(t._timer);
+    t._timer = setTimeout(function(){ t.classList.remove('show'); }, duration);
+}
+</script>
+<script type="text/babel">
+const { useState, useEffect } = React;
+const WIRE_COLORS = { 1: '#3b82f6', 2: '#eab308', 3: '#ef4444' };
+
+const copyToClipboard = (text) => {
+    const el = document.createElement("textarea"); el.value = text; document.body.appendChild(el);
+    el.select(); const ok = document.execCommand('copy'); document.body.removeChild(el); return ok;
+};
+
+const uniqueOpts = (correct, distractors) => {
+    const seen = new Set([String(correct)]);
+    const result = [correct];
+    for (const d of distractors) {
+        if (!seen.has(String(d))) { seen.add(String(d)); result.push(d); }
+    }
+    return result.sort(() => Math.random() - 0.5);
+};
+
+const makeQ = (wire, subQIndex, forcedFn = null) => {
+    const triangles = [{a:3,b:4,c:5},{a:6,b:8,c:10},{a:5,b:12,c:13},{a:8,b:15,c:17}];
+    const t = triangles[Math.floor(Math.random() * triangles.length)];
+    const types = ['sin', 'cos', 'tan'];
+    const fnType = forcedFn || types[subQIndex % 3];
+    const alpha = (Math.asin(t.a/t.c)*180/Math.PI).toFixed(1);
+    let q = { wire, subQIndex, fnType };
+
+    if (wire === 1) {
+        q.text = "זהו את הקשר הטריגונומטרי הנכון:";
+        const latex = fnType==='sin' ? `\\sin(x) = \\frac{${t.a}}{${t.c}}` : fnType==='cos' ? `\\cos(x) = \\frac{${t.b}}{${t.c}}` : `\\tan(x) = \\frac{${t.a}}{${t.b}}`;
+        const defNum1 = fnType==='cos' ? 'ניצב ליד' : 'ניצב מול';
+        const defDen1 = fnType==='tan' ? 'ניצב ליד' : 'יתר';
+        q.correct = latex;
+        q.steps = [
+            {t:'text', c:`הגדרה: ${fnType}(זווית) = ${defNum1} ÷ ${defDen1}`},
+            {t:'math', c:latex}
+        ];
+        q.svg = fnType==='sin' ? { opp: t.a, hyp: t.c, alpha: 'x' } : fnType==='cos' ? { adj: t.b, hyp: t.c, alpha: 'x' } : { opp: t.a, adj: t.b, alpha: 'x' };
+        q.opts = uniqueOpts(q.correct, [`\\sin(x) = \\frac{${t.c}}{${t.a}}`, `\\cos(x) = \\frac{${t.a}}{${t.c}}`, `\\tan(x) = \\frac{${t.b}}{${t.a}}`]);
+    } else if (wire === 2) {
+        q.text = "מצאו את אורך הצלע x:";
+        const val = fnType==='cos'?t.b:t.a; q.correct = `${val}`;
+        q.svg = fnType==='sin'?{hyp:t.c, alpha:`${alpha}°`, opp:'x'}:fnType==='cos'?{hyp:t.c, alpha:`${alpha}°`, adj:'x'}:{adj:t.b, alpha:`${alpha}°`, opp:'x'};
+        const eq = fnType==='sin'?`\\sin(${alpha}^\\circ) = \\frac{x}{${t.c}}`:fnType==='cos'?`\\cos(${alpha}^\\circ) = \\frac{x}{${t.c}}`:`\\tan(${alpha}^\\circ) = \\frac{x}{${t.b}}`;
+        const mult = fnType==='tan'?t.b:t.c;
+        const defNum2 = fnType==='cos' ? 'ניצב ליד' : 'ניצב מול';
+        const defDen2 = fnType==='tan' ? 'ניצב ליד' : 'יתר';
+        q.steps = [
+            {t:'text', c:`הגדרה: ${fnType}(זווית) = ${defNum2} ÷ ${defDen2}`},
+            {t:'math', c:eq},
+            {t:'math', c:`x = ${mult} \\cdot \\${fnType}(${alpha}^\\circ)`},
+            {t:'math', c:`x = ${val}`}
+        ];
+        q.opts = uniqueOpts(q.correct, [`${t.c}`, `${t.a+2}`, `${Math.abs(t.b-1)}`, `${t.b+1}`]);
+    } else {
+        q.text = "מצאו את גודל הזווית x:"; q.correct = `${alpha}°`;
+        const n1 = fnType==='cos'?t.b:t.a, n2 = fnType==='tan'?t.b:t.c;
+        q.svg = fnType==='sin'?{opp:t.a, hyp:t.c, alpha:'x'}:fnType==='cos'?{adj:t.b, hyp:t.c, alpha:'x'}:{opp:t.a, adj:t.b, alpha:'x'};
+        const defNum3 = fnType==='cos' ? 'ניצב ליד' : 'ניצב מול';
+        const defDen3 = fnType==='tan' ? 'ניצב ליד' : 'יתר';
+        q.steps = [
+            {t:'text', c:`הגדרה: ${fnType}(זווית) = ${defNum3} ÷ ${defDen3}`},
+            {t:'math', c:`\\${fnType}(x) = \\frac{${n1}}{${n2}}`},
+            {t:'text', c:`לוחצים על SHIFT ואז על ${fnType}`},
+            {t:'math', c:`x = ${alpha}^\\circ`}
+        ];
+        q.opts = uniqueOpts(q.correct, [`${(90-parseFloat(alpha)).toFixed(1)}°`, "45.0°", "30.0°", "60.0°"]);
+    }
+    return q;
+};
+
+const TriSVG = ({svg, color}) => (
+    <div className="w-full flex justify-center p-2 mb-2 rounded-xl border-2" style={{borderColor: color + '44', backgroundColor: color + '11'}}>
+        <svg width="140" height="120" viewBox="0 0 120 110">
+            <line x1="10" y1="90" x2="100" y2="90" stroke={color} strokeWidth="3"/>
+            <line x1="100" y1="90" x2="100" y2="20" stroke={color} strokeWidth="3"/>
+            <line x1="10" y1="90" x2="100" y2="20" stroke={color} strokeWidth="3"/>
+            <polyline points="90,90 90,80 100,80" stroke={color} strokeWidth="1" fill="none"/>
+            {svg.adj && <text x="55" y="105" textAnchor="middle" fill="#fff" fontSize="11" fontWeight="bold">{svg.adj}</text>}
+            {svg.opp && <text x="110" y="55" textAnchor="start" fill="#fff" fontSize="11" fontWeight="bold">{svg.opp}</text>}
+            {svg.hyp && <text x="40" y="45" textAnchor="middle" fill="#fff" fontSize="11" fontWeight="bold" transform="rotate(-38 40 45)">{svg.hyp}</text>}
+            {svg.alpha && <text x="25" y="85" textAnchor="middle" fill="#FFFF00" fontSize="13" fontWeight="900" style={{textShadow:'1px 1px 2px #000'}}>{svg.alpha}</text>}
+        </svg>
+    </div>
+);
+
+const App = () => {
+    const [screen, setScreen] = useState('intro');
+    const [name, setName] = useState('');
+    const [gender, setGender] = useState('M');
+    const [wire, setWire] = useState(1);
+    const [subQ, setSubQ] = useState(0);
+    const [q, setQ] = useState(null);
+    const [feedback, setFeedback] = useState(null);
+    const [timeLeft, setTimeLeft] = useState(60);
+    const [errors, setErrors] = useState({1:0, 2:0, 3:0});
+    const [score, setScore] = useState(0);
+    const [attempts, setAttempts] = useState(0);
+    const [startTime, setStartTime] = useState(null);
+
+    const T = (m, f) => gender === 'M' ? m : f;
+    const playSnip = () => { try { new Audio('https://assets.mixkit.co/active_storage/sfx/2568/2568-preview.mp3').play(); } catch(e){} };
+
+    useEffect(() => {
+        if (screen === 'play' && timeLeft > 0 && !feedback) {
+            const t = setInterval(() => setTimeLeft(p => p - 1), 1000);
+            return () => clearInterval(t);
+        } else if (timeLeft === 0 && screen === 'play') setScreen('exploded');
+    }, [screen, timeLeft, feedback]);
+
+    useEffect(() => { if(q || feedback) window.MathJax?.typesetPromise?.(); }, [q, feedback]);
+
+    const start = (e) => { e.preventDefault(); setStartTime(Date.now()); loadQ(1, 0); setScreen('play'); };
+    const loadQ = (w, s, forced = null) => { setQ(makeQ(w, s, forced)); setFeedback(null); setAttempts(0); setTimeLeft(60); };
+
+    const handleAns = (ans) => {
+        const isCorrect = ans === q.correct;
+        const newAttempts = attempts + 1;
+        setAttempts(newAttempts);
+        if (isCorrect) {
+            setScore(s => s + (newAttempts===1?20:newAttempts===2?10:5));
+            setFeedback({ type: 'success', msg: 'כל הכבוד, תשובה נכונה!' });
+            setTimeout(() => {
+                if (subQ < 2) { setSubQ(p => p + 1); loadQ(wire, subQ + 1); }
+                else { if (wire < 3) { playSnip(); setScreen('wire-cut'); } else setScreen('outro'); }
+            }, 1500);
+        } else {
+            setErrors(prev => ({ ...prev, [wire]: prev[wire] + 1 }));
+            if (newAttempts >= 3) setFeedback({ type: 'explain', q: q });
+            else {
+                setFeedback({ type: 'error', msg: 'לא נכון, נסו שוב' });
+                setTimeout(() => setFeedback(null), 1500);
+            }
+        }
+    };
+
+    if (screen === 'intro') return (
+        <div className="flex items-center justify-center min-h-screen p-6">
+            <div className="bg-panel border-2 border-green-500/30 p-8 w-full max-w-md text-center rounded-3xl">
+                <div className="text-8xl mb-6">💣</div>
+                <h1 className="neon-text text-4xl font-black mb-4">פצצת הטריגו</h1>
+                <div className="bg-black/40 p-4 rounded-2xl mb-6 text-start space-y-3 border border-white/10 text-sm">
+                    <p className="text-green-400 font-bold text-base text-center">עליך לנטרל פצצה לפני שתתפוצץ.</p>
+                    <p className="text-center">לפצצה 3 כבלים: <span style={{color:'#3b82f6', fontWeight:'bold'}}>כחול</span>, <span style={{color:'#eab308', fontWeight:'bold'}}>צהוב</span> ו<span style={{color:'#ef4444', fontWeight:'bold'}}>אדום</span>.</p>
+                    <p className="text-center">כדי לנטרל כל אחד מהכבלים עליך להשיב נכון ל-3 שאלות.</p>
+                    <p className="text-green-400 font-black pt-2 italic text-base text-center">מעכשיו - הכל תלוי בך! 💣</p>
+                </div>
+                <form onSubmit={start} className="space-y-4">
+                    <input className="w-full bg-black/50 border border-green-500/30 p-4 rounded-xl text-white text-center" placeholder="שם התלמיד/ה" required value={name} onChange={e=>setName(e.target.value)}/>
+                    <div className="flex gap-2">
+                        {[['M','סוכן'],['F','סוכנת']].map(([v,l])=>(
+                            <button key={v} type="button" onClick={()=>setGender(v)} className={`flex-1 p-3 rounded-xl border-2 font-bold ${gender===v?'border-green-400 bg-green-400/10 text-green-400':'border-white/10 text-white/40'}`}>{l}</button>
+                        ))}
+                    </div>
+                    <button type="submit" className="btn-neon">התחילו במשימה</button>
+                </form>
+            </div>
+        </div>
+    );
+
+    if (screen === 'wire-cut') return (
+        <div className="flex items-center justify-center min-h-screen bg-black p-6 text-center">
+            <div className="space-y-6">
+                <div className="text-8xl animate-bounce">✂️</div>
+                <h1 className="text-3xl font-black text-white">יופי!! ניתקת את הכבל {wire===1?'הכחול':'הצהוב'}…</h1>
+                <h2 className="text-xl text-green-400 animate-pulse">מתקדמים‼!</h2>
+                <button className="btn-neon mt-4" onClick={() => { const n = wire+1; setWire(n); setSubQ(0); loadQ(n, 0); setScreen('play'); }}>לשלב הבא ←</button>
+            </div>
+        </div>
+    );
+
+    if (screen === 'play') return (
+        <div className="p-4 max-w-md mx-auto flex flex-col h-full">
+            <div className="flex justify-between items-center mb-4">
+                <div className="p-2 rounded-lg border-2" style={{borderColor: WIRE_COLORS[wire], color: WIRE_COLORS[wire]}}>
+                    <span className="font-bold mono">{subQ+1} / 3</span>
+                </div>
+                <div className={`text-3xl font-black mono ${timeLeft<15?'text-red-500 animate-pulse':'text-green-400'}`}>{timeLeft}s</div>
+                <div className="text-left font-bold text-blue-400 text-sm">שם: {name}</div>
+            </div>
+            <div className="flex-1 bg-panel border border-white/10 rounded-3xl p-4 flex flex-col relative overflow-hidden">
+                {feedback ? (
+                    <div className="absolute inset-0 bg-black/95 z-50 p-6 flex flex-col items-center justify-center text-center">
+                        {feedback.type === 'success' ? (
+                            <div className="space-y-8">
+                                <div className="text-[140px] animate-bounce">👏</div>
+                                <h2 className="text-3xl font-black text-green-400">{feedback.msg}</h2>
+                            </div>
+                        ) : feedback.type === 'error' ? (
+                            <div className="space-y-6">
+                                <div className="text-7xl">⚠️</div>
+                                <h2 className="text-3xl font-black text-red-500">{feedback.msg}</h2>
+                            </div>
+                        ) : (
+                            <div className="overflow-y-auto w-full flex flex-col items-center">
+                                <TriSVG svg={feedback.q.svg} color={WIRE_COLORS[wire]}/>
+                                <div className="bg-white/5 border border-white/10 p-4 rounded-xl w-full text-center my-4">
+                                    <p className="text-yellow-400 font-bold mb-3 text-sm underline">דרך הפתרון:</p>
+                                    <div className="text-white text-lg space-y-4">
+                                        {feedback.q.steps.map((s,i)=>(
+                                            <div key={i}>
+                                                {s.t==='math' ? <div dangerouslySetInnerHTML={{__html: `$$${s.c}$$`}}/> : <div className="text-sm font-bold text-yellow-300">{s.c}</div>}
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                                <p className="text-sm text-green-400 mb-4">ענה נכון על שאלה דומה להמשך</p>
+                                <button className="btn-neon" onClick={() => loadQ(wire, subQ, q.fnType)}>לשאלה הבאה (Enter)</button>
+                            </div>
+                        )}
+                    </div>
+                ) : (
+                    <>
+                        <TriSVG svg={q.svg} color={WIRE_COLORS[wire]}/>
+                        <h3 className="text-center font-bold mb-6 mt-2 text-xl">{q.text}</h3>
+                        <div className="grid gap-3 mt-auto">
+                            {q.opts.map((opt, i) => (
+                                <button key={i} className="ans-btn text-lg" onClick={()=>handleAns(opt)} dangerouslySetInnerHTML={{__html:`$${opt}$`}}/>
+                            ))}
+                        </div>
+                    </>
+                )}
+            </div>
+        </div>
+    );
+
+    const totalTimeSecs = startTime ? Math.round((Date.now() - startTime) / 1000) : 0;
+    const totalErrors = errors[1] + errors[2] + errors[3];
+    const isChampion = totalErrors <= 1 && screen === 'outro';
+
+    return (
+        <div className="flex items-center justify-center min-h-screen p-4 text-right" dir="rtl">
+            <div className="report-card w-full max-w-md">
+                <div className="text-6xl mb-6 text-center">{screen==='outro'?'🏆':'💥'}</div>
+                <h1 className="text-3xl font-black text-white mb-8 text-center">{screen==='outro'?'הפצצה נוטרלה!':'הפצצה התפוצצה!'}</h1>
+                <div className="space-y-3 mb-8 text-base bg-white/5 p-5 rounded-xl border border-white/10">
+                    <div className="flex justify-between"><span>שם:</span><span className="font-bold">{name}</span></div>
+                    <div className="flex justify-between"><span>תאריך:</span><span dir="ltr">{new Date().toLocaleDateString('he-IL')} {new Date().toLocaleTimeString('he-IL',{hour:'2-digit',minute:'2-digit'})}</span></div>
+                    <div className="flex justify-between border-t border-white/10 pt-3 font-bold text-green-400"><span>זמן כולל:</span><span dir="ltr">{totalTimeSecs} שניות</span></div>
+                    <div className="border-t border-white/10 my-3"></div>
+                    <div className="flex justify-between text-blue-400"><span>כבל כחול:</span><span>{errors[1]} טעויות</span></div>
+                    <div className="flex justify-between text-yellow-400"><span>כבל צהוב:</span><span>{errors[2]} טעויות</span></div>
+                    <div className="flex justify-between text-red-400"><span>כבל אדום:</span><span>{errors[3]} טעויות</span></div>
+                </div>
+                {isChampion && <div className="bg-yellow-400 text-black font-black p-4 rounded-xl mb-8 text-xl animate-pulse text-center">{name} – {gender==='M'?'אלוף':'אלופה'}</div>}
+                <div className="flex flex-col gap-4">
+                    <button className="btn-neon" onClick={() => {
+                        const report = `שם: ${name}\nתאריך: ${new Date().toLocaleDateString('he-IL')} ${new Date().toLocaleTimeString('he-IL',{hour:'2-digit',minute:'2-digit'})}\nזמן כולל: ${totalTimeSecs} שניות\nטעויות: כ(${errors[1]}), צ(${errors[2]}), א(${errors[3]})\n` + (isChampion ? `הישג: ${name} - ${gender==='M'?'אלוף':'אלופה'}` : '');
+                        copyToClipboard(report); alert('כל נתוני הסיכום הועתקו!');
+                    }}>📋 העתקת כל נתוני הסיכום</button>
+                    <button className="text-white/40 text-sm underline py-2 hover:text-white text-center w-full" onClick={()=>window.location.reload()}>התחלה מחדש</button>
+                </div>
+            </div>
+        </div>
+    );
+};
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script></body></html>
